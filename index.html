@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multiplayer Color Canvas</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        #container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        #canvas {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            grid-gap: 10px;
+            margin: 20px 0;
+        }
+        .cell {
+            width: 100%;
+            aspect-ratio: 1;
+            background-color: #ddd;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        #colorPicker {
+            width: 100px;
+            height: 40px;
+            margin: 0 10px;
+        }
+        #status {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #eee;
+            border-radius: 5px;
+        }
+        #users {
+            margin-top: 20px;
+            text-align: left;
+        }
+        .user {
+            display: inline-block;
+            margin: 5px;
+            padding: 5px 10px;
+            background-color: #eee;
+            border-radius: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <h1>Multiplayer Color Canvas</h1>
+        <p>Click on any cell to change its color. All connected users will see your changes in real-time!</p>
+        
+        <div id="status">Connecting to server...</div>
+        
+        <div class="controls">
+            <label for="colorPicker">Your color: </label>
+            <input type="color" id="colorPicker" value="#3498db">
+            <button id="clearButton">Clear All</button>
+        </div>
+        
+        <div id="canvas"></div>
+        
+        <div id="users">
+            <h3>Connected Users:</h3>
+            <div id="userList"></div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.0/socket.io.min.js"></script>
+    <script>
+        // Configuration
+        const GRID_SIZE = 5;
+        // Replace this URL with your Socket.IO server URL when you've set it up
+        const SERVER_URL = "https://your-socketio-server-url.com";
+        
+        // DOM Elements
+        const canvas = document.getElementById('canvas');
+        const status = document.getElementById('status');
+        const colorPicker = document.getElementById('colorPicker');
+        const clearButton = document.getElementById('clearButton');
+        const userList = document.getElementById('userList');
+        
+        // Create grid cells
+        for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
+            const cell = document.createElement('div');
+            cell.className = 'cell';
+            cell.dataset.id = i;
+            canvas.appendChild(cell);
+        }
+        
+        // Connect to Socket.io server
+        const socket = io(SERVER_URL, {
+            transports: ['websocket'],
+            cors: {
+                origin: '*'
+            }
+        });
+        let userId = null;
+        
+        // Socket events
+        socket.on('connect', () => {
+            userId = socket.id;
+            status.textContent = 'Connected! Your ID: ' + userId.substring(0, 6);
+            status.style.backgroundColor = '#d4edda';
+        });
+        
+        socket.on('disconnect', () => {
+            status.textContent = 'Disconnected. Trying to reconnect...';
+            status.style.backgroundColor = '#f8d7da';
+        });
+        
+        socket.on('initialState', (data) => {
+            // Update grid with current state
+            if (data.grid) {
+                data.grid.forEach((color, index) => {
+                    if (color) {
+                        document.querySelector(`.cell[data-id="${index}"]`).style.backgroundColor = color;
+                    }
+                });
+            }
+            
+            // Update user list
+            updateUserList(data.users);
+        });
+        
+        socket.on('cellUpdate', (data) => {
+            const cell = document.querySelector(`.cell[data-id="${data.cellId}"]`);
+            if (cell) {
+                cell.style.backgroundColor = data.color;
+            }
+        });
+        
+        socket.on('clearGrid', () => {
+            document.querySelectorAll('.cell').forEach(cell => {
+                cell.style.backgroundColor = '#ddd';
+            });
+        });
+        
+        socket.on('userList', (users) => {
+            updateUserList(users);
+        });
+        
+        // Cell click event
+        canvas.addEventListener('click', (e) => {
+            if (e.target.classList.contains('cell')) {
+                const cellId = e.target.dataset.id;
+                const color = colorPicker.value;
+                
+                // Update locally
+                e.target.style.backgroundColor = color;
+                
+                // Send to server
+                socket.emit('updateCell', {
+                    cellId: cellId,
+                    color: color
+                });
+            }
+        });
+        
+        // Clear button event
+        clearButton.addEventListener('click', () => {
+            socket.emit('clearGrid');
+        });
+        
+        // Helper functions
+        function updateUserList(users) {
+            userList.innerHTML = '';
+            users.forEach(user => {
+                const userElement = document.createElement('div');
+                userElement.className = 'user';
+                userElement.textContent = user.id.substring(0, 6);
+                userElement.style.backgroundColor = user.color || '#eee';
+                userElement.style.color = getContrastColor(user.color || '#eee');
+                userList.appendChild(userElement);
+            });
+        }
+        
+        function getContrastColor(hexColor) {
+            // Convert hex to RGB
+            const r = parseInt(hexColor.substr(1, 2), 16);
+            const g = parseInt(hexColor.substr(3, 2), 16);
+            const b = parseInt(hexColor.substr(5, 2), 16);
+            
+            // Calculate brightness (YIQ formula)
+            const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+            
+            return (yiq >= 128) ? 'black' : 'white';
+        }
+        
+        // Update user color when it changes
+        colorPicker.addEventListener('change', () => {
+            socket.emit('updateUser', {
+                color: colorPicker.value
+            });
+        });
+    </script>
+</body>
+</html>
