@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream Viewer - Multiplayer Color Canvas</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        #container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .video-container {
+            margin: 20px 0;
+            position: relative;
+            padding-bottom: 56.25%; /* 16:9 aspect ratio */
+            height: 0;
+            overflow: hidden;
+        }
+        .video-container iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        .input-container {
+            margin: 20px 0;
+        }
+        .back-button {
+            display: inline-block;
+            background-color: #3498db;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        .instructions {
+            text-align: left;
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <h1>Live Stream Viewer</h1>
+        
+        <div class="input-container">
+            <label for="streamId">Enter Stream ID or URL:</label>
+            <input type="text" id="streamId" placeholder="YouTube/Twitch embed URL or ID">
+            <button onclick="loadStream()">Load Stream</button>
+        </div>
+        
+        <div class="video-container" id="videoContainer">
+            <p>Enter a stream URL to begin viewing</p>
+        </div>
+        
+        <a href="index.html" class="back-button">Back to Canvas</a>
+        
+        <div class="instructions">
+            <h3>How to Stream to This Page:</h3>
+            <ol>
+                <li>Create a YouTube, Twitch, or similar streaming account</li>
+                <li>Set up OBS to stream to your platform of choice (see instructions below)</li>
+                <li>Once streaming, copy your stream's embed URL</li>
+                <li>Paste the URL in the box above and click "Load Stream"</li>
+            </ol>
+            
+            <h3>OBS Quick Setup:</h3>
+            <ol>
+                <li>Download and install OBS from <a href="https://obsproject.com/" target="_blank">obsproject.com</a></li>
+                <li>In OBS, go to Settings → Stream</li>
+                <li>Select your streaming service (YouTube, Twitch, etc.)</li>
+                <li>Enter your stream key (obtained from your streaming service)</li>
+                <li>Set up your sources (what you want to capture)</li>
+                <li>Click "Start Streaming" in OBS</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        function loadStream() {
+            const streamInput = document.getElementById('streamId').value.trim();
+            const videoContainer = document.getElementById('videoContainer');
+            
+            if (!streamInput) {
+                alert('Please enter a stream URL or ID');
+                return;
+            }
+            
+            let embedUrl = '';
+            
+            // Handle different types of input
+            if (streamInput.includes('youtube.com') || streamInput.includes('youtu.be')) {
+                // YouTube URL
+                const videoId = extractYouTubeId(streamInput);
+                if (videoId) {
+                    embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+                }
+            } else if (streamInput.includes('twitch.tv')) {
+                // Twitch URL
+                const channelName = extractTwitchChannel(streamInput);
+                if (channelName) {
+                    embedUrl = `https://player.twitch.tv/?channel=${channelName}&parent=${window.location.hostname}`;
+                }
+            } else if (streamInput.includes('<iframe')) {
+                // Iframe code
+                const srcMatch = streamInput.match(/src="([^"]+)"/);
+                if (srcMatch && srcMatch[1]) {
+                    embedUrl = srcMatch[1];
+                }
+            } else {
+                // Assume it's a YouTube video ID
+                embedUrl = `https://www.youtube.com/embed/${streamInput}?autoplay=1`;
+            }
+            
+            if (embedUrl) {
+                videoContainer.innerHTML = `<iframe src="${embedUrl}" allowfullscreen></iframe>`;
+            } else {
+                alert('Invalid stream URL or ID');
+            }
+        }
+        
+        function extractYouTubeId(url) {
+            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+            const match = url.match(regExp);
+            return (match && match[2].length === 11) ? match[2] : null;
+        }
+        
+        function extractTwitchChannel(url) {
+            const regExp = /^.*(twitch.tv\/)((?!videos|embed)[^#\&\?]*).*/;
+            const match = url.match(regExp);
+            return match ? match[2] : null;
+        }
+    </script>
+</body>
+</html>
