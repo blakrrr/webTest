@@ -20,39 +20,41 @@
             border-radius: 10px;
             box-shadow: 0 0 10px rgba(0,0,0,0.1);
         }
-        .video-container {
-            margin: 20px 0;
-            position: relative;
-            padding-bottom: 56.25%; /* 16:9 aspect ratio */
-            height: 0;
-            overflow: hidden;
-        }
-        .video-container iframe {
-            position: absolute;
-            top: 0;
-            left: 0;
+        #videoElement {
             width: 100%;
-            height: 100%;
-            border: none;
+            max-width: 720px;
+            background-color: #222;
+            margin: 20px auto;
+            border-radius: 8px;
         }
-        .input-container {
-            margin: 20px 0;
+        #streamKey {
+            padding: 8px;
+            width: 250px;
+            margin-right: 10px;
         }
-        .back-button {
-            display: inline-block;
+        #connectButton {
+            padding: 8px 15px;
             background-color: #3498db;
             color: white;
-            padding: 10px 20px;
-            text-decoration: none;
+            border: none;
             border-radius: 5px;
-            margin-top: 20px;
+            cursor: pointer;
+        }
+        .status {
+            margin: 15px 0;
+            padding: 10px;
+            border-radius: 5px;
+            background-color: #eee;
         }
         .instructions {
             text-align: left;
-            background-color: #f9f9f9;
             padding: 15px;
-            border-radius: 5px;
-            margin-top: 20px;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        h3 {
+            color: #3498db;
         }
     </style>
 </head>
@@ -60,93 +62,136 @@
     <div id="container">
         <h1>Live Stream Viewer</h1>
         
-        <div class="input-container">
-            <label for="streamId">Enter Stream ID or URL:</label>
-            <input type="text" id="streamId" placeholder="YouTube/Twitch embed URL or ID">
-            <button onclick="loadStream()">Load Stream</button>
+        <div class="status" id="status">Waiting for connection...</div>
+        
+        <div>
+            <input type="text" id="streamKey" placeholder="Enter stream key">
+            <button id="connectButton">Connect</button>
         </div>
         
-        <div class="video-container" id="videoContainer">
-            <p>Enter a stream URL to begin viewing</p>
-        </div>
-        
-        <a href="index.html" class="back-button">Back to Canvas</a>
+        <video id="videoElement" autoplay playsinline></video>
         
         <div class="instructions">
-            <h3>How to Stream to This Page:</h3>
+            <h3>How to Stream with OBS:</h3>
             <ol>
-                <li>Create a YouTube, Twitch, or similar streaming account</li>
-                <li>Set up OBS to stream to your platform of choice (see instructions below)</li>
-                <li>Once streaming, copy your stream's embed URL</li>
-                <li>Paste the URL in the box above and click "Load Stream"</li>
-            </ol>
-            
-            <h3>OBS Quick Setup:</h3>
-            <ol>
-                <li>Download and install OBS from <a href="https://obsproject.com/" target="_blank">obsproject.com</a></li>
                 <li>In OBS, go to Settings → Stream</li>
-                <li>Select your streaming service (YouTube, Twitch, etc.)</li>
-                <li>Enter your stream key (obtained from your streaming service)</li>
-                <li>Set up your sources (what you want to capture)</li>
-                <li>Click "Start Streaming" in OBS</li>
+                <li>Set Service to "Custom..."</li>
+                <li>Set Server to "wss://webrtc.live-video.net:4444"</li>
+                <li>Create a unique Stream Key</li>
+                <li>Click OK and Start Streaming in OBS</li>
+                <li>Enter the same Stream Key above and click Connect</li>
             </ol>
         </div>
+        
+        <a href="index.html" style="display: inline-block; padding: 10px 20px; background-color: #3498db; color: white; text-decoration: none; border-radius: 5px;">Back to Canvas</a>
     </div>
 
+    <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
     <script>
-        function loadStream() {
-            const streamInput = document.getElementById('streamId').value.trim();
-            const videoContainer = document.getElementById('videoContainer');
+        document.addEventListener('DOMContentLoaded', function() {
+            const videoElement = document.getElementById('videoElement');
+            const statusElement = document.getElementById('status');
+            const streamKeyInput = document.getElementById('streamKey');
+            const connectButton = document.getElementById('connectButton');
             
-            if (!streamInput) {
-                alert('Please enter a stream URL or ID');
-                return;
+            let peerConnection = null;
+            let websocket = null;
+            
+            connectButton.addEventListener('click', connectToStream);
+            
+            function connectToStream() {
+                const streamKey = streamKeyInput.value.trim();
+                
+                if (!streamKey) {
+                    statusElement.textContent = 'Please enter a stream key';
+                    statusElement.style.backgroundColor = '#f8d7da';
+                    return;
+                }
+                
+                statusElement.textContent = 'Connecting to stream...';
+                statusElement.style.backgroundColor = '#fff3cd';
+                
+                // Create WebRTC peer connection
+                const configuration = {
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ]
+                };
+                
+                peerConnection = new RTCPeerConnection(configuration);
+                
+                // Set up WebRTC event handlers
+                peerConnection.ontrack = function(event) {
+                    videoElement.srcObject = event.streams[0];
+                    statusElement.textContent = 'Stream connected!';
+                    statusElement.style.backgroundColor = '#d4edda';
+                };
+                
+                peerConnection.onicecandidate = function(event) {
+                    if (event.candidate && websocket && websocket.readyState === WebSocket.OPEN) {
+                        websocket.send(JSON.stringify({
+                            type: 'ice',
+                            candidate: event.candidate
+                        }));
+                    }
+                };
+                
+                // Connect to signaling server
+                websocket = new WebSocket('wss://webrtc.live-video.net:4444');
+                
+                websocket.onopen = function() {
+                    websocket.send(JSON.stringify({
+                        type: 'connect',
+                        streamKey: streamKey
+                    }));
+                };
+                
+                websocket.onmessage = async function(event) {
+                    const message = JSON.parse(event.data);
+                    
+                    if (message.type === 'offer') {
+                        await peerConnection.setRemoteDescription(new RTCSessionDescription(message.sdp));
+                        const answer = await peerConnection.createAnswer();
+                        await peerConnection.setLocalDescription(answer);
+                        
+                        websocket.send(JSON.stringify({
+                            type: 'answer',
+                            sdp: peerConnection.localDescription
+                        }));
+                    } else if (message.type === 'ice') {
+                        try {
+                            await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
+                        } catch (e) {
+                            console.error('Error adding ice candidate', e);
+                        }
+                    } else if (message.type === 'error') {
+                        statusElement.textContent = message.message || 'Connection error';
+                        statusElement.style.backgroundColor = '#f8d7da';
+                    }
+                };
+                
+                websocket.onerror = function() {
+                    statusElement.textContent = 'WebSocket connection error';
+                    statusElement.style.backgroundColor = '#f8d7da';
+                };
+                
+                websocket.onclose = function() {
+                    statusElement.textContent = 'WebSocket connection closed';
+                    statusElement.style.backgroundColor = '#f8d7da';
+                };
             }
             
-            let embedUrl = '';
-            
-            // Handle different types of input
-            if (streamInput.includes('youtube.com') || streamInput.includes('youtu.be')) {
-                // YouTube URL
-                const videoId = extractYouTubeId(streamInput);
-                if (videoId) {
-                    embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+            // Clean up when navigating away
+            window.addEventListener('beforeunload', function() {
+                if (websocket) {
+                    websocket.close();
                 }
-            } else if (streamInput.includes('twitch.tv')) {
-                // Twitch URL
-                const channelName = extractTwitchChannel(streamInput);
-                if (channelName) {
-                    embedUrl = `https://player.twitch.tv/?channel=${channelName}&parent=${window.location.hostname}`;
+                if (peerConnection) {
+                    peerConnection.close();
                 }
-            } else if (streamInput.includes('<iframe')) {
-                // Iframe code
-                const srcMatch = streamInput.match(/src="([^"]+)"/);
-                if (srcMatch && srcMatch[1]) {
-                    embedUrl = srcMatch[1];
-                }
-            } else {
-                // Assume it's a YouTube video ID
-                embedUrl = `https://www.youtube.com/embed/${streamInput}?autoplay=1`;
-            }
-            
-            if (embedUrl) {
-                videoContainer.innerHTML = `<iframe src="${embedUrl}" allowfullscreen></iframe>`;
-            } else {
-                alert('Invalid stream URL or ID');
-            }
-        }
-        
-        function extractYouTubeId(url) {
-            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-            const match = url.match(regExp);
-            return (match && match[2].length === 11) ? match[2] : null;
-        }
-        
-        function extractTwitchChannel(url) {
-            const regExp = /^.*(twitch.tv\/)((?!videos|embed)[^#\&\?]*).*/;
-            const match = url.match(regExp);
-            return match ? match[2] : null;
-        }
+            });
+        });
     </script>
 </body>
 </html>
