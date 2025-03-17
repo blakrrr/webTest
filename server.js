@@ -1,83 +1,70 @@
-const express = require('express');
-const http = require('http');
-const socketIO = require('socket.io');
+const WebSocket = require('ws');
+const server = new WebSocket.Server({ port: process.env.PORT || 8080 });
 
-// Create Express app
-const app = express();
-const server = http.createServer(app);
-const io = socketIO(server, {
-  cors: {
-    origin: "*", // Allow all origins to connect
-    methods: ["GET", "POST"]
+// Track connected clients
+const clients = new Map();
+let nextPlayerID = 1;
+
+server.on('connection', (socket) => {
+  // Assign a unique ID to each new connection
+  const playerID = nextPlayerID++;
+  clients.set(playerID, socket);
+  
+  // Send initial setup data to the new client
+  socket.send(JSON.stringify({
+    type: 'init',
+    id: playerID,
+    positions: Array.from(clients.entries())
+      .filter(([id]) => id !== playerID)
+      .map(([id, client]) => ({
+        id,
+        position: client.position || { x: 0, y: 0 }
+      }))
+  }));
+  
+  // Broadcast new player joined
+  broadcastToOthers(playerID, {
+    type: 'player_joined',
+    id: playerID
+  });
+  
+  // Handle messages
+  socket.on('message', (message) => {
+    const data = JSON.parse(message);
+    
+    // Update player position in server memory
+    if (data.type === 'position') {
+      socket.position = { x: data.x, y: data.y };
+      
+      // Broadcast new position to all other clients
+      broadcastToOthers(playerID, {
+        type: 'position',
+        id: playerID,
+        x: data.x,
+        y: data.y
+      });
+    }
+  });
+  
+  // Handle disconnection
+  socket.on('close', () => {
+    clients.delete(playerID);
+    
+    // Broadcast player left
+    broadcastToOthers(playerID, {
+      type: 'player_left',
+      id: playerID
+    });
+  });
+});
+
+function broadcastToOthers(senderID, data) {
+  const message = JSON.stringify(data);
+  for (const [id, client] of clients.entries()) {
+    if (id !== senderID && client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
   }
-});
+}
 
-// State management
-const state = {
-    grid: Array(25).fill(null),
-    users: []
-};
-
-// Socket.IO events
-io.on('connection', (socket) => {
-    console.log(`User connected: ${socket.id}`);
-    
-    // Add user to the list
-    state.users.push({
-        id: socket.id,
-        color: '#3498db'
-    });
-    
-    // Send current state to the new user
-    socket.emit('initialState', state);
-    
-    // Broadcast updated user list
-    io.emit('userList', state.users);
-    
-    // Handle cell updates
-    socket.on('updateCell', (data) => {
-        const { cellId, color } = data;
-        
-        // Update state
-        state.grid[cellId] = color;
-        
-        // Broadcast update to all clients except sender
-        socket.broadcast.emit('cellUpdate', {
-            cellId: cellId,
-            color: color
-        });
-    });
-    
-    // Handle grid clear
-    socket.on('clearGrid', () => {
-        state.grid = Array(25).fill(null);
-        io.emit('clearGrid');
-    });
-    
-    // Handle user color update
-    socket.on('updateUser', (data) => {
-        const userIndex = state.users.findIndex(user => user.id === socket.id);
-        if (userIndex !== -1) {
-            state.users[userIndex].color = data.color;
-            io.emit('userList', state.users);
-        }
-    });
-    
-    // Handle disconnection
-    socket.on('disconnect', () => {
-        console.log(`User disconnected: ${socket.id}`);
-        
-        // Remove user from list
-        const userIndex = state.users.findIndex(user => user.id === socket.id);
-        if (userIndex !== -1) {
-            state.users.splice(userIndex, 1);
-            io.emit('userList', state.users);
-        }
-    });
-});
-
-// Start server
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+console.log('WebSocket server running');
