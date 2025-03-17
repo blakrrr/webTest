@@ -29,18 +29,25 @@ server.on('connection', (socket) => {
   });
   
   // Server code additions for 3D positions
+  // Server-side code update
+  // Server-side code update
   socket.on('message', (message) => {
       const data = JSON.parse(message);
       
       if (data.type === 'position') {
-          socket.position = { x: data.x, y: data.y, z: data.z };
+          // Handle both 2D and 3D positions
+          socket.position = { 
+              x: data.x, 
+              y: data.y,
+              z: data.z || 0  // Default to 0 if z is not provided
+          };
           
           broadcastToOthers(playerID, {
               type: 'position',
               id: playerID,
               x: data.x,
               y: data.y,
-              z: data.z
+              z: data.z || 0
           });
       }
   });
