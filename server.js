@@ -44,6 +44,7 @@ server.on('connection', (socket) => {
   socket.on('message', (message) => {
     try {
       const data = JSON.parse(message);
+      console.log(`Received message from player ${playerID}:`, data);
       
       // Update player position in server memory
       if (data.type === 'position') {
