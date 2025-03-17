@@ -28,22 +28,21 @@ server.on('connection', (socket) => {
     id: playerID
   });
   
-  // Handle messages
+  // Server code additions for 3D positions
   socket.on('message', (message) => {
-    const data = JSON.parse(message);
-    
-    // Update player position in server memory
-    if (data.type === 'position') {
-      socket.position = { x: data.x, y: data.y };
+      const data = JSON.parse(message);
       
-      // Broadcast new position to all other clients
-      broadcastToOthers(playerID, {
-        type: 'position',
-        id: playerID,
-        x: data.x,
-        y: data.y
-      });
-    }
+      if (data.type === 'position') {
+          socket.position = { x: data.x, y: data.y, z: data.z };
+          
+          broadcastToOthers(playerID, {
+              type: 'position',
+              id: playerID,
+              x: data.x,
+              y: data.y,
+              z: data.z
+          });
+      }
   });
   
   // Handle disconnection
