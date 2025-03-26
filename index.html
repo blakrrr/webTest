@@ -8,6 +8,7 @@
         #nameForm { display: flex; margin-bottom: 20px; }
         #nameInput { flex-grow: 1; margin-right: 10px; }
         #connectedUsers { border: 1px solid #ddd; padding: 10px; }
+        #connectionStatus { margin-top: 10px; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -18,6 +19,8 @@
         <button type="submit">Connect</button>
     </form>
 
+    <div id="connectionStatus"></div>
+
     <div id="connectedUsers">
         <h2>Connected Users:</h2>
         <ul id="userList"></ul>
@@ -25,8 +28,34 @@
 
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script>
-        // Use the deployed server URL
-        const socket = io('https://multiplayer-canvas-server.onrender.com');
+        const connectionStatus = document.getElementById('connectionStatus');
+        
+        // Attempt to add error handling and connection debugging
+        const socket = io('https://multiplayer-canvas-server.onrender.com', {
+            reconnection: true,
+            reconnectionAttempts: 5,
+            reconnectionDelay: 1000
+        });
+
+        // Connection status tracking
+        socket.on('connect', () => {
+            connectionStatus.textContent = 'Connected to server ✓';
+            connectionStatus.style.color = 'green';
+            console.log('Connected to server');
+        });
+
+        socket.on('connect_error', (error) => {
+            connectionStatus.textContent = `Connection Error: ${error.message}`;
+            connectionStatus.style.color = 'red';
+            console.error('Connection Error:', error);
+        });
+
+        socket.on('disconnect', (reason) => {
+            connectionStatus.textContent = `Disconnected: ${reason}`;
+            connectionStatus.style.color = 'orange';
+            console.log('Disconnected:', reason);
+        });
+
         const nameForm = document.getElementById('nameForm');
         const nameInput = document.getElementById('nameInput');
         const userList = document.getElementById('userList');
