@@ -1,122 +1,50 @@
-const WebSocket = require('ws');
-const server = new WebSocket.Server({ port: process.env.PORT || 8080 });
+const express = require('express');
+const http = require('http');
+const socketIo = require('socket.io');
+const path = require('path');
 
-// Track connected clients
-const clients = new Map();
-let nextPlayerID = 1;
+const app = express();
+const server = http.createServer(app);
+const io = socketIo(server);
 
-console.log('Multiplayer server started');
+const PORT = process.env.PORT || 3000;
 
-server.on('connection', (socket) => {
-  // Assign a unique ID to each new connection
-  const playerID = nextPlayerID++;
-  console.log(`Player ${playerID} connected`);
-  
-  // Store client information
-  clients.set(playerID, {
-    socket: socket,
-    position: { x: 0, y: 0, z: 0 }
-  });
-  
-  // Send initial setup data to the new client
-  const initialPositions = Array.from(clients.entries())
-    .filter(([id]) => id !== playerID)
-    .map(([id, client]) => ({
-      id,
-      position: client.position
-    }));
-    
-  socket.send(JSON.stringify({
-    type: 'init',
-    id: playerID,
-    positions: initialPositions
-  }));
-  
-  console.log(`Sent initial data to player ${playerID}, ${initialPositions.length} other players`);
-  
-  // Broadcast new player joined
-  broadcastToOthers(playerID, {
-    type: 'player_joined',
-    id: playerID
-  });
-  
-  // Handle messages
-  socket.on('message', (message) => {
-    try {
-      const data = JSON.parse(message);
-      console.log(`Received message from player ${playerID}:`, data);
-      
-      // Update player position in server memory
-      if (data.type === 'position') {
-        const client = clients.get(playerID);
-        if (client) {
-          client.position = { 
-            x: data.x, 
-            y: data.y,
-            z: data.z || 0
-          };
-          
-          // Broadcast new position to all other clients
-          broadcastToOthers(playerID, {
-            type: 'position',
-            id: playerID,
-            x: data.x,
-            y: data.y,
-            z: data.z || 0
-          });
-        }
-      }
-    } catch (error) {
-      console.error(`Error processing message from player ${playerID}:`, error);
-    }
-  });
-  
-  // Handle disconnection
-  socket.on('close', () => {
-    console.log(`Player ${playerID} disconnected`);
-    clients.delete(playerID);
-    
-    // Broadcast player left
-    broadcastToOthers(playerID, {
-      type: 'player_left',
-      id: playerID
+// Store connected users
+const users = new Set();
+
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+io.on('connection', (socket) => {
+    console.log('New client connected');
+
+    socket.on('new-user', (name) => {
+        // Add user to the set
+        users.add(name);
+        
+        // Attach name to socket for later use
+        socket.username = name;
+
+        // Emit updated user list to all clients
+        io.emit('user-list', Array.from(users));
+        
+        // Notify other users about new connection
+        socket.broadcast.emit('user-connected', name);
     });
-  });
-  
-  // Handle errors
-  socket.on('error', (error) => {
-    console.error(`Error with player ${playerID}:`, error);
-  });
+
+    socket.on('disconnect', () => {
+        if (socket.username) {
+            // Remove user from the set
+            users.delete(socket.username);
+
+            // Notify other users about disconnection
+            io.emit('user-list', Array.from(users));
+            socket.broadcast.emit('user-disconnected', socket.username);
+        }
+    });
 });
 
-function broadcastToOthers(senderID, data) {
-  const message = JSON.stringify(data);
-  let recipients = 0;
-  
-  for (const [id, client] of clients.entries()) {
-    if (id !== senderID && client.socket.readyState === WebSocket.OPEN) {
-      client.socket.send(message);
-      recipients++;
-    }
-  }
-  
-  if (recipients > 0) {
-    console.log(`Broadcast message from player ${senderID} to ${recipients} other clients`);
-  }
-}
-
-// Handle server errors
-server.on('error', (error) => {
-  console.error('Server error:', error);
+server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
 });
-
-// Keep-alive to prevent timeout on some hosting platforms
-setInterval(() => {
-  for (const [id, client] of clients.entries()) {
-    if (client.socket.readyState === WebSocket.OPEN) {
-      client.socket.ping();
-    }
-  }
-}, 30000);
-
-console.log(`WebSocket server running on port ${process.env.PORT || 8080}`);

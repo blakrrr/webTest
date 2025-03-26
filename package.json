@@ -1,16 +1,13 @@
 {
-  "name": "multiplayer-canvas-server",
+  "name": "multiplayer-name-connection",
   "version": "1.0.0",
-  "description": "WebSocket server for multiplayer canvas",
+  "description": "Basic multiplayer connection with name display",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.17.1",
-    "socket.io": "^4.5.0"
-  },
-  "engines": {
-    "node": "16.x"
+    "socket.io": "^4.4.1"
   }
 }
